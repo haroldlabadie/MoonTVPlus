@@ -1,0 +1,60 @@
+name: Auto Sync Upstream & Deploy
+
+on:
+  schedule:
+    # 每天北京时间凌晨 04:00 (UTC 20:00) 自动检查一次上游是否有新版本
+    - cron: '0 20 * * *'
+  workflow_dispatch: # 保留随时在页面一键“手动同步+部署”的按钮
+
+concurrency:
+  group: auto-sync-deploy
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  sync-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Check and Sync with Upstream
+        id: sync
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # 关联上游作者仓库并获取最新分支
+          git remote add upstream https://github.com/mtvpls/MoonTVPlus.git
+          git fetch upstream main
+
+          LOCAL_SHA=$(git rev-parse HEAD)
+          UPSTREAM_SHA=$(git rev-parse upstream/main)
+
+          echo "当前仓库 Commit: $LOCAL_SHA"
+          echo "上游仓库 Commit: $UPSTREAM_SHA"
+
+          if [ "$LOCAL_SHA" != "$UPSTREAM_SHA" ]; then
+            echo "has_update=true" >> $GITHUB_OUTPUT
+            echo "🚀 发现上游作者有新提交，正在合并到 main 分支..."
+            git merge upstream/main --no-edit -m "chore: auto-sync with upstream mtvpls/MoonTVPlus"
+            git push origin main
+          else
+            echo "has_update=false" >> $GITHUB_OUTPUT
+            echo "✅ 当前已是最新版本，无需同步。"
+          fi
+
+      - name: Trigger Cloudflare Deployment
+        # 当有新代码合并，或者你手动点击按钮时，自动调用现有的 Cloudflare 部署
+        if: steps.sync.outputs.has_update == 'true' || github.event_name == 'workflow_dispatch'
+        run: |
+          echo "🚀 正在自动触发 Cloudflare 部署流水线..."
+          gh workflow run cloudflare-deploy.yml --ref main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
