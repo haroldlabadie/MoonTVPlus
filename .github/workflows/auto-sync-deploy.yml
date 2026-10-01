@@ -55,6 +55,6 @@ jobs:
         if: steps.sync.outputs.has_update == 'true' || github.event_name == 'workflow_dispatch'
         run: |
           echo "🚀 正在自动触发 Cloudflare 部署流水线..."
-          gh workflow run cloudflare-deploy.yml --ref main
+          gh workflow run cloudflare-deploy.yml --repo "$GITHUB_REPOSITORY" --ref main
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
